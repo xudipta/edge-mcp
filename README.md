@@ -156,6 +156,8 @@ make build    # ./bin/edge-mcp
 make demo     # run against the sample fleet
 ```
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a tool, and [SECURITY.md](SECURITY.md) to report a vulnerability.
+
 ## Roadmap
 
 - [ ] Multi-cluster: query every context in a kubeconfig as one fleet
