@@ -130,6 +130,8 @@ kubectl apply -f deploy/rbac-readonly.yaml   # or deploy/rbac-operator.yaml
 docker build -t edge-mcp .
 ```
 
+Released images are published to `ghcr.io/xudipta/edge-mcp` (linux/amd64 and linux/arm64). `deploy/deployment.yaml` is a ready-made Deployment and Service.
+
 Run the image with the `edge-mcp` service account and `--http 0.0.0.0:8080` behind your ingress and auth.
 
 ## How it works
