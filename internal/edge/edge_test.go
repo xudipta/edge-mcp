@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,7 +21,7 @@ func cluster(t *testing.T, mut func(*edge.Config)) (*edge.Cluster, context.Conte
 	if mut != nil {
 		mut(&cfg)
 	}
-	c := edge.New(edgetest.Fleet(), cfg).WithClock(func() time.Time { return edgetest.Now })
+	c := edge.New(edgetest.Fleet(), cfg).WithClock(func() time.Time { return edgetest.Now }).WithLogSource(edgetest.Logs)
 	return c, context.Background()
 }
 
@@ -214,5 +215,27 @@ func TestDryRunIsSentToTheAPIServer(t *testing.T) {
 	}
 	if patches != 2 {
 		t.Errorf("saw %d patch requests, want 2", patches)
+	}
+}
+
+func TestDemoLogsExplainCrash(t *testing.T) {
+	c, ctx := cluster(t, nil)
+	log, err := c.PodLogs(ctx, "vision", "defect-detector-c", "", 0, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(log, "failed to load model") {
+		t.Errorf("crash log should name the reason, got:\n%s", log)
+	}
+	tail, err := c.PodLogs(ctx, "vision", "defect-detector-c", "", 2, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(tail, "\n"); n != 2 {
+		t.Errorf("tail_lines=2 returned %d lines:\n%s", n, tail)
+	}
+	healthy, err := c.PodLogs(ctx, "vision", "defect-detector-a", "", 0, false)
+	if err != nil || !strings.Contains(healthy, "listening") || strings.Contains(healthy, "fake logs") {
+		t.Errorf("healthy log = %q, err = %v", healthy, err)
 	}
 }

@@ -62,7 +62,7 @@ func run() error {
 
 	var cluster *edge.Cluster
 	if *demo {
-		cluster = edge.New(edgetest.Fleet(), cfg).WithClock(func() time.Time { return edgetest.Now })
+		cluster = edge.New(edgetest.Fleet(), cfg).WithClock(func() time.Time { return edgetest.Now }).WithLogSource(edgetest.Logs)
 	} else {
 		client, err := kubeClient(*kubeconfig, *kubeContext)
 		if err != nil {
