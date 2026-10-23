@@ -21,6 +21,8 @@ func New(c *edge.Cluster) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "edge-mcp", Title: "Edge MCP", Version: Version},
 		&mcp.ServerOptions{Instructions: instructions})
 	addReadTools(s, c)
+	addPrompts(s)
+	addResources(s, c)
 	if c.Config().AllowWrites {
 		addActionTools(s, c)
 	}
