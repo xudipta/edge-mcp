@@ -76,8 +76,8 @@ func TestOverview(t *testing.T) {
 	if o.Accelerators["gpu.intel.com/i915"] != 2 || o.Accelerators["npu.intel.com/accel"] != 1 {
 		t.Errorf("accelerators = %v", o.Accelerators)
 	}
-	if o.PodsFailing != 1 || o.PodsRunning != 3 {
-		t.Errorf("pods running=%d failing=%d, want 3 / 1", o.PodsRunning, o.PodsFailing)
+	if o.PodsFailing != 1 || o.PodsRunning != 7 || o.PodsPending != 1 {
+		t.Errorf("pods running=%d failing=%d pending=%d, want 7 / 1 / 1", o.PodsRunning, o.PodsFailing, o.PodsPending)
 	}
 	if len(o.RecentWarnings) != 1 || o.RecentWarnings[0].Reason != "BackOff" {
 		t.Errorf("warnings = %+v", o.RecentWarnings)
@@ -96,7 +96,7 @@ func TestDescribeNodeShowsCrashLoop(t *testing.T) {
 			crash = true
 		}
 	}
-	if len(d.Pods) != 2 || !crash {
+	if len(d.Pods) != 3 || !crash {
 		t.Errorf("pods on pune-02 = %+v", d.Pods)
 	}
 }
@@ -107,7 +107,7 @@ func TestWorkloadsUnhealthyOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(w) != 1 || w[0].Name != "defect-detector" || w[0].Ready != 2 || w[0].Desired != 3 {
+	if len(w) != 2 || w[0].Name != "model-runtime" || w[1].Name != "defect-detector" || w[1].Ready != 2 || w[1].Desired != 3 {
 		t.Errorf("unhealthy workloads = %+v", w)
 	}
 }
@@ -214,5 +214,51 @@ func TestDryRunIsSentToTheAPIServer(t *testing.T) {
 	}
 	if patches != 2 {
 		t.Errorf("saw %d patch requests, want 2", patches)
+	}
+}
+
+func TestRolloutStatusGroupsBySiteAndImage(t *testing.T) {
+	c, ctx := cluster(t, nil)
+	r, err := c.RolloutStatus(ctx, "daemonset", "edge-system", "model-runtime")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.TargetImage != "registry.local/model-runtime:v2" || r.Complete {
+		t.Errorf("report = %+v", r)
+	}
+	bySite := map[string]edge.SiteRollout{}
+	for _, s := range r.Sites {
+		bySite[s.Site] = s
+	}
+	if s := bySite["factory-pune"]; !s.Done || s.Stuck || s.Pods != 2 {
+		t.Errorf("factory-pune = %+v, want done", s)
+	}
+	blr := bySite["store-blr"]
+	if blr.Done || !blr.Stuck || len(blr.Images) != 2 || !blr.Images[0].Current || blr.Images[1].Image != "registry.local/model-runtime:v1" {
+		t.Errorf("store-blr = %+v, want mixed v2/v1 and stuck", blr)
+	}
+	if !slices.Contains(blr.Reasons, "node blr-02 is NotReady") {
+		t.Errorf("store-blr reasons = %v", blr.Reasons)
+	}
+	del := bySite["warehouse-del"]
+	if !del.Stuck || !slices.Contains(del.Reasons, "pod model-runtime-del-01 is Pending") {
+		t.Errorf("warehouse-del = %+v, want stuck on a Pending pod", del)
+	}
+	if !slices.Equal(r.StuckSites, []string{"store-blr", "warehouse-del"}) || r.SitesDone != 1 || r.PendingPods != 1 {
+		t.Errorf("stuck=%v done=%d pending=%d", r.StuckSites, r.SitesDone, r.PendingPods)
+	}
+}
+
+func TestRolloutStatusErrors(t *testing.T) {
+	c, ctx := cluster(t, func(cfg *edge.Config) { cfg.Namespaces = []string{"retail"} })
+	if _, err := c.RolloutStatus(ctx, "DaemonSet", "edge-system", "model-runtime"); err == nil {
+		t.Error("namespace outside the allowlist should fail")
+	}
+	c, ctx = cluster(t, nil)
+	if _, err := c.RolloutStatus(ctx, "StatefulSet", "edge-system", "model-runtime"); err == nil {
+		t.Error("unsupported kind should fail")
+	}
+	if _, err := c.RolloutStatus(ctx, "DaemonSet", "edge-system", "nope"); err == nil {
+		t.Error("unknown workload should fail")
 	}
 }
