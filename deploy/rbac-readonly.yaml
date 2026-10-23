@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: edge-mcp
+---
+# Read-only access for edge-mcp (the default mode). Note: no access to Secrets or ConfigMaps.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: edge-mcp
+  namespace: edge-mcp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: edge-mcp-readonly
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "pods", "events"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "statefulsets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: edge-mcp-readonly
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edge-mcp-readonly
+subjects:
+  - kind: ServiceAccount
+    name: edge-mcp
+    namespace: edge-mcp

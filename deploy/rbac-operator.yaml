@@ -1,0 +1,26 @@
+# Adds the permissions --allow-writes needs on top of rbac-readonly.yaml:
+# cordon/uncordon nodes, rolling restarts and scaling. Apply rbac-readonly.yaml first.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: edge-mcp-operator
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "statefulsets"]
+    verbs: ["patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: edge-mcp-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edge-mcp-operator
+subjects:
+  - kind: ServiceAccount
+    name: edge-mcp
+    namespace: edge-mcp
