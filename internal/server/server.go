@@ -56,6 +56,11 @@ type workloadsOut struct {
 	Workloads []edge.Workload `json:"workloads"`
 }
 
+type accelIn struct {
+	Site string `json:"site,omitempty" jsonschema:"only nodes at this site"`
+	Node string `json:"node,omitempty" jsonschema:"only this node"`
+}
+
 type eventsIn struct {
 	Namespace string `json:"namespace,omitempty" jsonschema:"namespace to inspect; empty means every allowed namespace"`
 	All       bool   `json:"all,omitempty" jsonschema:"include Normal events too; by default only Warnings are returned"`
@@ -113,6 +118,15 @@ func addReadTools(s *mcp.Server, c *edge.Cluster) {
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in workloadsIn) (*mcp.CallToolResult, workloadsOut, error) {
 		w, err := c.ListWorkloads(ctx, in.Namespace, in.UnhealthyOnly)
 		return nil, workloadsOut{Workloads: w}, err
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "accelerator_usage",
+		Description: "GPU/NPU/other accelerator allocation per node: allocatable vs allocated vs free. Allocated is computed from pod resource requests (source=requests), so it shows what is reserved, not measured utilisation. Use it to find nodes with a free accelerator.",
+		Annotations: readOnly("Accelerator usage"),
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in accelIn) (*mcp.CallToolResult, *edge.AcceleratorReport, error) {
+		r, err := c.AcceleratorUsage(ctx, in.Site, in.Node)
+		return nil, r, err
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

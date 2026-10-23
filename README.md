@@ -39,6 +39,7 @@ edge-mcp gives an assistant edge-shaped answers and keeps it on a short leash.
 | `list_edge_nodes` | Site, readiness, heartbeat age, pressure, taints, OS/kubelet versions, GPUs/NPUs. Filter by `site` or `unhealthy_only` | read |
 | `describe_edge_node` | One node, its pods (restarts, `CrashLoopBackOff` reasons) and its recent events | read |
 | `list_workloads` | Deployments, DaemonSets, StatefulSets with desired/ready/available; `unhealthy_only` | read |
+| `accelerator_usage` | Allocatable vs allocated vs free GPUs/NPUs per node (from pod requests, not measured use). Filter by `site` or `node` | read |
 | `list_events` | Recent events, newest first, warnings only by default | read |
 | `get_pod_logs` | Tail of a container log (max 500 lines), including `previous` after a crash | read |
 | `cordon_node` / `uncordon_node` | Stop or resume scheduling on a node | write, opt-in |

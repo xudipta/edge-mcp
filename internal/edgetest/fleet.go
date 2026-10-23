@@ -54,6 +54,13 @@ func pod(ns, name, nodeName string, phase corev1.PodPhase, ready bool, waitingRe
 	}
 }
 
+// withAccel makes a pod request n of an accelerator resource.
+func withAccel(p *corev1.Pod, name corev1.ResourceName, n string) *corev1.Pod {
+	rl := corev1.ResourceList{name: resource.MustParse(n)}
+	p.Spec.Containers[0].Resources = corev1.ResourceRequirements{Requests: rl, Limits: rl}
+	return p
+}
+
 func deployment(ns, name string, desired, ready int32) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
@@ -82,7 +89,7 @@ func Fleet() *fake.Clientset {
 		deployment("vision", "defect-detector", 3, 2),
 		deployment("retail", "shelf-scanner", 1, 1),
 
-		pod("vision", "defect-detector-a", "pune-01", corev1.PodRunning, true, "", 0),
+		withAccel(pod("vision", "defect-detector-a", "pune-01", corev1.PodRunning, true, "", 0), "gpu.intel.com/i915", "1"),
 		pod("vision", "defect-detector-b", "pune-02", corev1.PodRunning, true, "", 0),
 		pod("vision", "defect-detector-c", "pune-02", corev1.PodRunning, false, "CrashLoopBackOff", 7),
 		pod("retail", "shelf-scanner-a", "blr-01", corev1.PodRunning, true, "", 0),
