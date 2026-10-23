@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -53,7 +54,10 @@ func run() error {
 	// stdout carries the MCP protocol in stdio mode, so all logging goes to stderr.
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
-	cfg.MaxReplicas = int32(*maxReplicas)
+	if *maxReplicas < 1 || *maxReplicas > math.MaxInt32 {
+		return fmt.Errorf("--max-replicas must be between 1 and %d", math.MaxInt32)
+	}
+	cfg.MaxReplicas = int32(*maxReplicas) // #nosec G115 -- range checked above
 	for _, ns := range strings.Split(*namespaces, ",") {
 		if ns = strings.TrimSpace(ns); ns != "" {
 			cfg.Namespaces = append(cfg.Namespaces, ns)

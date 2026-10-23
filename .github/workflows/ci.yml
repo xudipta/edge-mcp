@@ -18,8 +18,15 @@ jobs:
           go-version-file: go.mod
       - name: Lint
         run: make lint
-      - name: Test
-        run: make test
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.15
+      - name: Test with coverage
+        run: |
+          go test -race -coverprofile=coverage.out ./...
+          total=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}')
+          echo "### Test coverage: ${total}" >> "$GITHUB_STEP_SUMMARY"
       - name: Build
         run: make build
       - name: Smoke test (demo over stdio)
