@@ -119,9 +119,11 @@ edge-mcp --allow-writes --namespaces vision,retail --max-replicas 10
 | `--allow-writes` | `false` | Register cordon/uncordon/restart/scale tools |
 | `--max-replicas` | `20` | Upper bound for `scale_deployment` |
 | `--http` | (stdio) | Serve Streamable HTTP on an address such as `127.0.0.1:8080` |
+| `--http-token` | `$EDGE_MCP_TOKEN` | Require `Authorization: Bearer <token>` on every HTTP request |
+| `--http-insecure` | `false` | Allow `--http` on a non-loopback address without a token |
 | `--demo` | `false` | Use the built-in sample fleet instead of a cluster |
 
-> **HTTP mode has no authentication of its own.** Bind it to localhost, or put it behind an authenticating proxy, before exposing it on a network.
+> **Exposing HTTP mode takes a deliberate choice.** Binding to a non-loopback address is refused unless you set `--http-token` (or `EDGE_MCP_TOKEN`) or pass `--http-insecure`. Prefer a token, and terminate TLS in front of edge-mcp: bearer tokens are sent in clear text over plain HTTP.
 
 ## Run it in the cluster
 
@@ -130,7 +132,7 @@ kubectl apply -f deploy/rbac-readonly.yaml   # or deploy/rbac-operator.yaml
 docker build -t edge-mcp .
 ```
 
-Run the image with the `edge-mcp` service account and `--http 0.0.0.0:8080` behind your ingress and auth.
+Run the image with the `edge-mcp` service account and `--http 0.0.0.0:8080`, supplying the token from a Secret (`EDGE_MCP_TOKEN`), behind your TLS-terminating ingress. Clients send `Authorization: Bearer <token>`.
 
 ## How it works
 
