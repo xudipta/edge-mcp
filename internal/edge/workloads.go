@@ -193,15 +193,16 @@ func tailLines(s string, n int64) string {
 
 // Overview is a one-glance health summary of the whole fleet.
 type Overview struct {
-	Nodes          int                   `json:"nodes"`
-	NodesReady     int                   `json:"nodes_ready"`
-	NodesAttention []string              `json:"nodes_needing_attention"`
-	Sites          map[string]SiteHealth `json:"sites"`
-	Accelerators   map[string]int64      `json:"accelerators" jsonschema:"total allocatable accelerators across the fleet, by resource name"`
-	PodsRunning    int                   `json:"pods_running"`
-	PodsPending    int                   `json:"pods_pending"`
-	PodsFailing    int                   `json:"pods_failing" jsonschema:"pods failed or stuck in CrashLoopBackOff/ImagePullBackOff"`
-	RecentWarnings []EventBrief          `json:"recent_warnings"`
+	Nodes                 int                   `json:"nodes"`
+	NodesReady            int                   `json:"nodes_ready"`
+	NodesAttention        []string              `json:"nodes_needing_attention"`
+	Sites                 map[string]SiteHealth `json:"sites"`
+	Accelerators          map[string]int64      `json:"accelerators" jsonschema:"total allocatable accelerators across the fleet, by resource name"`
+	AcceleratorsAllocated map[string]int64      `json:"accelerators_allocated" jsonschema:"accelerators requested by pods across the fleet, by resource name (requests, not measured use)"`
+	PodsRunning           int                   `json:"pods_running"`
+	PodsPending           int                   `json:"pods_pending"`
+	PodsFailing           int                   `json:"pods_failing" jsonschema:"pods failed or stuck in CrashLoopBackOff/ImagePullBackOff"`
+	RecentWarnings        []EventBrief          `json:"recent_warnings"`
 }
 
 // SiteHealth counts nodes at one site.
@@ -263,6 +264,14 @@ func (c *Cluster) Overview(ctx context.Context) (*Overview, error) {
 				o.PodsPending++
 			case b.Phase == string(corev1.PodRunning):
 				o.PodsRunning++
+			}
+		}
+	}
+	o.AcceleratorsAllocated = map[string]int64{}
+	if usage, err := c.AcceleratorUsage(ctx, "", ""); err == nil {
+		for _, n := range usage.Nodes {
+			for _, r := range n.Resources {
+				o.AcceleratorsAllocated[r.Resource] += r.Allocated
 			}
 		}
 	}

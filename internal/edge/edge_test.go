@@ -80,6 +80,9 @@ func TestOverview(t *testing.T) {
 	if o.PodsFailing != 1 || o.PodsRunning != 7 || o.PodsPending != 1 {
 		t.Errorf("pods running=%d failing=%d pending=%d, want 7 / 1 / 1", o.PodsRunning, o.PodsFailing, o.PodsPending)
 	}
+	if o.AcceleratorsAllocated["gpu.intel.com/i915"] != 1 || o.AcceleratorsAllocated["npu.intel.com/accel"] != 0 {
+		t.Errorf("accelerators allocated = %v, want 1 gpu and 0 npu", o.AcceleratorsAllocated)
+	}
 	if len(o.RecentWarnings) != 1 || o.RecentWarnings[0].Reason != "BackOff" {
 		t.Errorf("warnings = %+v", o.RecentWarnings)
 	}
@@ -215,6 +218,55 @@ func TestDryRunIsSentToTheAPIServer(t *testing.T) {
 	}
 	if patches != 2 {
 		t.Errorf("saw %d patch requests, want 2", patches)
+	}
+}
+
+func TestAcceleratorUsage(t *testing.T) {
+	c, ctx := cluster(t, nil)
+	r, err := c.AcceleratorUsage(ctx, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Source != "requests" || r.Partial {
+		t.Errorf("source=%q partial=%v", r.Source, r.Partial)
+	}
+	got := map[string]edge.AcceleratorResource{}
+	for _, n := range r.Nodes {
+		for _, res := range n.Resources {
+			got[n.Node] = res
+		}
+	}
+	if len(r.Nodes) != 3 { // blr-02 and del-01 have no accelerators
+		t.Fatalf("got %d accelerator nodes, want 3: %+v", len(r.Nodes), r.Nodes)
+	}
+	if g := got["pune-01"]; g.Allocatable != 1 || g.Allocated != 1 || g.Free != 0 {
+		t.Errorf("pune-01 = %+v, want fully allocated", g)
+	}
+	if g := got["pune-02"]; g.Allocated != 0 || g.Free != 1 {
+		t.Errorf("pune-02 = %+v, want free", g)
+	}
+	if g := got["blr-01"]; g.Resource != "npu.intel.com/accel" || g.Free != 1 {
+		t.Errorf("blr-01 = %+v, want a free NPU", g)
+	}
+
+	r, err = c.AcceleratorUsage(ctx, "store-blr", "")
+	if err != nil || len(r.Nodes) != 1 || r.Nodes[0].Node != "blr-01" {
+		t.Errorf("site filter: %+v, %v", r, err)
+	}
+	r, err = c.AcceleratorUsage(ctx, "", "pune-02")
+	if err != nil || len(r.Nodes) != 1 || r.Nodes[0].Node != "pune-02" {
+		t.Errorf("node filter: %+v, %v", r, err)
+	}
+}
+
+func TestAcceleratorUsageFlagsPartialWithAllowlist(t *testing.T) {
+	c, ctx := cluster(t, func(cfg *edge.Config) { cfg.Namespaces = []string{"retail"} })
+	r, err := c.AcceleratorUsage(ctx, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Partial {
+		t.Error("report should be marked partial when an allowlist hides pods")
 	}
 }
 
