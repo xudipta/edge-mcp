@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -80,7 +81,9 @@ func run() error {
 	defer stop()
 
 	if *httpAddr == "" {
-		return srv.Run(ctx, &mcp.StdioTransport{})
+		// Piped input closes stdin right after the last request; hold EOF back until it is answered.
+		in, out := drainingStdio(os.Stdin, nopCloser{os.Stdout}, 30*time.Second)
+		return srv.Run(ctx, &mcp.IOTransport{Reader: in, Writer: out})
 	}
 	if err := checkHTTPExposure(*httpAddr, *httpToken, *httpInsecure); err != nil {
 		return err
@@ -123,3 +126,8 @@ func kubeClient(path, kubeContext string) (kubernetes.Interface, error) {
 	}
 	return client, nil
 }
+
+// nopCloser keeps the transport from closing os.Stdout.
+type nopCloser struct{ io.Writer }
+
+func (nopCloser) Close() error { return nil }
