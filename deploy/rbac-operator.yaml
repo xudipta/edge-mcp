@@ -1,5 +1,5 @@
 # Adds the permissions --allow-writes needs on top of rbac-readonly.yaml:
-# cordon/uncordon nodes, rolling restarts and scaling. Apply rbac-readonly.yaml first.
+# cordon/uncordon/drain nodes, rolling restarts and scaling. Apply rbac-readonly.yaml first.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -11,6 +11,14 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments", "daemonsets", "statefulsets"]
     verbs: ["patch"]
+  # drain_node evicts pods through the Eviction API (honours PodDisruptionBudgets).
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+  # drain_node reads PodDisruptionBudgets to warn about blocked evictions.
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

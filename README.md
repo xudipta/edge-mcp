@@ -44,6 +44,7 @@ edge-mcp gives an assistant edge-shaped answers and keeps it on a short leash.
 | `list_events` | Recent events, newest first, warnings only by default | read |
 | `get_pod_logs` | Tail of a container log (max 500 lines), including `previous` after a crash | read |
 | `cordon_node` / `uncordon_node` | Stop or resume scheduling on a node | write, opt-in |
+| `drain_node` | Cordon and evict a node's pods via the Eviction API (honours PodDisruptionBudgets; skips DaemonSet and static pods; refuses emptyDir and unmanaged pods; warns if it is the site's last Ready node) | write, opt-in |
 | `restart_workload` | Rolling restart (like `kubectl rollout restart`) | write, opt-in |
 | `scale_deployment` | Change replicas, capped by `--max-replicas` | write, opt-in |
 
@@ -146,7 +147,7 @@ edge-mcp --allow-writes --namespaces vision,retail --max-replicas 10
 | `--site-label` | `topology.kubernetes.io/zone` | Node label that names a node's site |
 | `--namespaces` | all | Comma-separated namespace allowlist |
 | `--stale-heartbeat` | `2m` | Flag nodes whose last heartbeat is older than this |
-| `--allow-writes` | `false` | Register cordon/uncordon/restart/scale tools |
+| `--allow-writes` | `false` | Register cordon/uncordon/drain/restart/scale tools |
 | `--max-replicas` | `20` | Upper bound for `scale_deployment` |
 | `--http` | (stdio) | Serve Streamable HTTP on an address such as `127.0.0.1:8080` |
 | `--http-token` | `$EDGE_MCP_TOKEN` | Require `Authorization: Bearer <token>` on every HTTP request |
@@ -196,7 +197,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a tool, and [SECURITY.md](
 
 - [ ] Multi-cluster: query every context in a kubeconfig as one fleet
 - [ ] Accelerator telemetry: GPU/NPU utilisation from device-plugin and Prometheus metrics
-- [ ] `drain_node` with PodDisruptionBudget checks
+- [x] `drain_node` with PodDisruptionBudget checks
 - [ ] Site-level rollout status for DaemonSets
 - [ ] MCP resources for node and workload snapshots
 - [ ] Prebuilt binaries and a container image on each release

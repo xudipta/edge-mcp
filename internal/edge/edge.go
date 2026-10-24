@@ -37,10 +37,11 @@ func DefaultConfig() Config {
 
 // Cluster wraps a Kubernetes client with the edge-specific views and guard rails.
 type Cluster struct {
-	client kubernetes.Interface
-	cfg    Config
-	now    func() time.Time
-	logs   LogSource
+	client    kubernetes.Interface
+	cfg       Config
+	now       func() time.Time
+	drainPoll time.Duration
+	logs      LogSource
 }
 
 // LogSource replaces the Kubernetes log endpoint, for demos whose fake clientset
