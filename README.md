@@ -40,6 +40,7 @@ edge-mcp gives an assistant edge-shaped answers and keeps it on a short leash.
 | `describe_edge_node` | One node, its pods (restarts, `CrashLoopBackOff` reasons) and its recent events | read |
 | `list_workloads` | Deployments, DaemonSets, StatefulSets with desired/ready/available; `unhealthy_only` | read |
 | `accelerator_usage` | Allocatable vs allocated vs free GPUs/NPUs per node (from pod requests, not measured use). Filter by `site` or `node` | read |
+| `rollout_status` | Which sites run which image of a Deployment/DaemonSet, and which sites are stuck (old image only, Pending pods, NotReady nodes) | read |
 | `list_events` | Recent events, newest first, warnings only by default | read |
 | `get_pod_logs` | Tail of a container log (max 500 lines), including `previous` after a crash | read |
 | `cordon_node` / `uncordon_node` | Stop or resume scheduling on a node | write, opt-in |
@@ -47,6 +48,21 @@ edge-mcp gives an assistant edge-shaped answers and keeps it on a short leash.
 | `scale_deployment` | Change replicas, capped by `--max-replicas` | write, opt-in |
 
 Every tool returns structured JSON (with an output schema) plus text, so it works with any MCP client.
+
+### Prompts and resources
+
+In clients that support them, edge-mcp also offers one-click workflows and attachable context. Prompts never run action tools.
+
+| Prompt | Arguments | What it does |
+|---|---|---|
+| `triage_fleet` | none | Overview → unhealthy nodes → failing workloads → logs, summarised by site with next steps |
+| `site_report` | `site` | Status report for one site |
+| `incident_summary` | `namespace` | Recent warnings and crash reasons for a team's namespace |
+
+| Resource template | Returns |
+|---|---|
+| `edge://nodes/{name}` | JSON snapshot of a node with its pods and recent events |
+| `edge://sites/{site}` | JSON snapshot of every node at a site |
 
 ## Safety model
 
@@ -57,6 +73,19 @@ Every tool returns structured JSON (with an output schema) plus text, so it work
 - **Bounded.** Logs are capped at 500 lines and 256 KiB per call; `scale_deployment` is capped by `--max-replicas`.
 - **Honest annotations.** Tools carry MCP `readOnlyHint` / `destructiveHint` annotations so clients can gate them.
 - **Least privilege.** Ready-made [read-only](deploy/rbac-readonly.yaml) and [operator](deploy/rbac-operator.yaml) RBAC roles.
+
+## Install
+
+Download a prebuilt binary (linux and macOS on amd64/arm64, Windows on amd64) from the [latest release](https://github.com/xudipta/edge-mcp/releases/latest). For example, on a linux/arm64 edge device:
+
+```sh
+VERSION=v0.1.0   # see the releases page
+curl -fsSL -o edge-mcp.tar.gz "https://github.com/xudipta/edge-mcp/releases/download/${VERSION}/edge-mcp_${VERSION}_linux_arm64.tar.gz"
+tar -xzf edge-mcp.tar.gz && sudo install "edge-mcp_${VERSION}_linux_arm64/edge-mcp" /usr/local/bin/
+edge-mcp --version
+```
+
+Each release includes `checksums.txt` (SHA-256). Or, with a Go toolchain: `go install github.com/xudipta/edge-mcp/cmd/edge-mcp@latest`.
 
 ## Quick start
 
@@ -120,9 +149,11 @@ edge-mcp --allow-writes --namespaces vision,retail --max-replicas 10
 | `--allow-writes` | `false` | Register cordon/uncordon/restart/scale tools |
 | `--max-replicas` | `20` | Upper bound for `scale_deployment` |
 | `--http` | (stdio) | Serve Streamable HTTP on an address such as `127.0.0.1:8080` |
+| `--http-token` | `$EDGE_MCP_TOKEN` | Require `Authorization: Bearer <token>` on every HTTP request |
+| `--http-insecure` | `false` | Allow `--http` on a non-loopback address without a token |
 | `--demo` | `false` | Use the built-in sample fleet instead of a cluster |
 
-> **HTTP mode has no authentication of its own.** Bind it to localhost, or put it behind an authenticating proxy, before exposing it on a network.
+> **Exposing HTTP mode takes a deliberate choice.** Binding to a non-loopback address is refused unless you set `--http-token` (or `EDGE_MCP_TOKEN`) or pass `--http-insecure`. Prefer a token, and terminate TLS in front of edge-mcp: bearer tokens are sent in clear text over plain HTTP.
 
 ## Run it in the cluster
 
@@ -131,7 +162,9 @@ kubectl apply -f deploy/rbac-readonly.yaml   # or deploy/rbac-operator.yaml
 docker build -t edge-mcp .
 ```
 
-Run the image with the `edge-mcp` service account and `--http 0.0.0.0:8080` behind your ingress and auth.
+Released images are published to `ghcr.io/xudipta/edge-mcp` (linux/amd64 and linux/arm64). `deploy/deployment.yaml` is a ready-made Deployment and Service.
+
+Run the image with the `edge-mcp` service account and `--http 0.0.0.0:8080`, supplying the token from a Secret (`EDGE_MCP_TOKEN`), behind your TLS-terminating ingress. Clients send `Authorization: Bearer <token>`.
 
 ## How it works
 
@@ -156,6 +189,8 @@ make lint     # gofmt + go vet
 make build    # ./bin/edge-mcp
 make demo     # run against the sample fleet
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a tool, and [SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## Roadmap
 

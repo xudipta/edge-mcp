@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -154,6 +155,13 @@ func (c *Cluster) PodLogs(ctx context.Context, namespace, pod, container string,
 		tail = 100
 	}
 	tail = min(tail, MaxLogLines)
+	if c.logs != nil {
+		full, err := c.logs(namespace, pod, container, previous)
+		if err != nil {
+			return "", fmt.Errorf("reading logs of %s/%s: %w", namespace, pod, err)
+		}
+		return tailLines(full, tail), nil
+	}
 	req := c.client.CoreV1().Pods(namespace).GetLogs(pod, &corev1.PodLogOptions{
 		Container: container, TailLines: &tail, Previous: previous,
 	})
@@ -161,13 +169,26 @@ func (c *Cluster) PodLogs(ctx context.Context, namespace, pod, container string,
 	if err != nil {
 		return "", fmt.Errorf("reading logs of %s/%s: %w", namespace, pod, err)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	var buf bytes.Buffer
 	// Hard cap on bytes too, so one chatty line can't flood the model's context.
 	if _, err := io.Copy(&buf, io.LimitReader(rc, 256*1024)); err != nil {
 		return "", fmt.Errorf("reading logs of %s/%s: %w", namespace, pod, err)
 	}
 	return buf.String(), nil
+}
+
+// tailLines returns the last n lines of s.
+func tailLines(s string, n int64) string {
+	lines := strings.SplitAfter(strings.TrimSuffix(s, "\n"), "\n")
+	if int64(len(lines)) > n {
+		lines = lines[int64(len(lines))-n:]
+	}
+	out := strings.Join(lines, "")
+	if !strings.HasSuffix(out, "\n") && out != "" {
+		out += "\n"
+	}
+	return out
 }
 
 // Overview is a one-glance health summary of the whole fleet.

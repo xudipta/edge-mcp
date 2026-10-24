@@ -1,0 +1,59 @@
+# Runs edge-mcp in the cluster over Streamable HTTP. Apply an RBAC file first:
+#   kubectl apply -f deploy/rbac-readonly.yaml
+# Create the bearer token clients must send as "Authorization: Bearer <token>":
+#   kubectl -n edge-mcp create secret generic edge-mcp-token --from-literal=token="$(openssl rand -hex 32)"
+# Put TLS-terminating ingress in front before exposing it outside the cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-mcp
+  namespace: edge-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: edge-mcp
+  template:
+    metadata:
+      labels:
+        app: edge-mcp
+    spec:
+      serviceAccountName: edge-mcp
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: edge-mcp
+          image: ghcr.io/xudipta/edge-mcp:latest # pin a release tag in production
+          args: ["--http", "0.0.0.0:8080"]
+          env:
+            - name: EDGE_MCP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: edge-mcp-token
+                  key: token
+          ports:
+            - containerPort: 8080
+              name: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edge-mcp
+  namespace: edge-mcp
+spec:
+  selector:
+    app: edge-mcp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

@@ -21,6 +21,8 @@ func New(c *edge.Cluster) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "edge-mcp", Title: "Edge MCP", Version: Version},
 		&mcp.ServerOptions{Instructions: instructions})
 	addReadTools(s, c)
+	addPrompts(s)
+	addResources(s, c)
 	if c.Config().AllowWrites {
 		addActionTools(s, c)
 	}
@@ -59,6 +61,12 @@ type workloadsOut struct {
 type accelIn struct {
 	Site string `json:"site,omitempty" jsonschema:"only nodes at this site"`
 	Node string `json:"node,omitempty" jsonschema:"only this node"`
+}
+
+type rolloutIn struct {
+	Kind      string `json:"kind" jsonschema:"Deployment or DaemonSet"`
+	Namespace string `json:"namespace" jsonschema:"namespace of the workload"`
+	Name      string `json:"name" jsonschema:"workload name"`
 }
 
 type eventsIn struct {
@@ -126,6 +134,15 @@ func addReadTools(s *mcp.Server, c *edge.Cluster) {
 		Annotations: readOnly("Accelerator usage"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in accelIn) (*mcp.CallToolResult, *edge.AcceleratorReport, error) {
 		r, err := c.AcceleratorUsage(ctx, in.Site, in.Node)
+		return nil, r, err
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "rollout_status",
+		Description: "Which sites run which version of a Deployment or DaemonSet: pods grouped by site and image, with sites that are stuck (old image only, Pending pods, NotReady nodes) highlighted. Use it to answer \"has the new version reached every site?\".",
+		Annotations: readOnly("Rollout status by site"),
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in rolloutIn) (*mcp.CallToolResult, *edge.RolloutReport, error) {
+		r, err := c.RolloutStatus(ctx, in.Kind, in.Namespace, in.Name)
 		return nil, r, err
 	})
 

@@ -62,7 +62,7 @@ func call(t *testing.T, cs *mcp.ClientSession, name string, args map[string]any,
 
 func TestReadOnlyServerExposesOnlyReadTools(t *testing.T) {
 	cs := connect(t, edge.DefaultConfig())
-	want := []string{"accelerator_usage", "cluster_overview", "describe_edge_node", "get_pod_logs", "list_edge_nodes", "list_events", "list_workloads"}
+	want := []string{"accelerator_usage", "cluster_overview", "describe_edge_node", "get_pod_logs", "list_edge_nodes", "list_events", "list_workloads", "rollout_status"}
 	if got := toolNames(t, cs); !slices.Equal(got, want) {
 		t.Errorf("tools = %v, want %v", got, want)
 	}
@@ -130,5 +130,69 @@ func TestActionsDefaultToDryRun(t *testing.T) {
 	call(t, cs, "cordon_node", map[string]any{"name": "blr-02", "reason": "offline", "dry_run": false}, &r)
 	if r.DryRun || r.Message != "cordoned" {
 		t.Errorf("cordon with dry_run=false: %+v", r)
+	}
+}
+
+func TestPrompts(t *testing.T) {
+	cs := connect(t, edge.DefaultConfig())
+	ctx := context.Background()
+	var names []string
+	for p, err := range cs.Prompts(ctx, nil) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, p.Name)
+	}
+	slices.Sort(names)
+	if want := []string{"incident_summary", "site_report", "triage_fleet"}; !slices.Equal(names, want) {
+		t.Fatalf("prompts = %v, want %v", names, want)
+	}
+	res, err := cs.GetPrompt(ctx, &mcp.GetPromptParams{Name: "site_report", Arguments: map[string]string{"site": "store-blr"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txt := res.Messages[0].Content.(*mcp.TextContent).Text; !strings.Contains(txt, "store-blr") {
+		t.Errorf("site_report should mention the site, got %q", txt)
+	}
+	if _, err := cs.GetPrompt(ctx, &mcp.GetPromptParams{Name: "incident_summary"}); err == nil {
+		t.Error("incident_summary without a namespace should fail")
+	}
+	if _, err := cs.GetPrompt(ctx, &mcp.GetPromptParams{Name: "triage_fleet"}); err != nil {
+		t.Errorf("triage_fleet: %v", err)
+	}
+}
+
+func TestResources(t *testing.T) {
+	cs := connect(t, edge.DefaultConfig())
+	ctx := context.Background()
+
+	res, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: "edge://nodes/blr-02"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var node edge.NodeDetail
+	if err := json.Unmarshal([]byte(res.Contents[0].Text), &node); err != nil {
+		t.Fatal(err)
+	}
+	if node.Node.Name != "blr-02" || node.Node.Healthy() {
+		t.Errorf("node snapshot = %+v, want unhealthy blr-02", node.Node)
+	}
+
+	res, err = cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: "edge://sites/factory-pune"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var site edge.SiteSnapshot
+	if err := json.Unmarshal([]byte(res.Contents[0].Text), &site); err != nil {
+		t.Fatal(err)
+	}
+	if site.Site != "factory-pune" || len(site.Nodes) != 2 {
+		t.Errorf("site snapshot = %+v, want 2 nodes at factory-pune", site)
+	}
+
+	for _, uri := range []string{"edge://nodes/nope", "edge://sites/nope", "edge://nodes/"} {
+		if _, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri}); err == nil {
+			t.Errorf("%s should not be found", uri)
+		}
 	}
 }
