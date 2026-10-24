@@ -6,6 +6,10 @@
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
+![An AI assistant triaging a sample edge fleet with edge-mcp](docs/demo.gif)
+
+<sub>Recorded from `edge-mcp --demo`; the tool results are real, the prompt and summary are scripted. [MP4](docs/demo.mp4) · regenerate with `docs/demo/make.sh`.</sub>
+
 ```text
 You:       Which of my stores have problems right now?
 
