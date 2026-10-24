@@ -1,0 +1,38 @@
+name: E2E (kind)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: make build
+      - name: Create kind cluster (1 control plane + 3 workers)
+        uses: helm/kind-action@v1.12.0
+        with:
+          cluster_name: edge
+          config: test/e2e/kind.yaml
+      - name: Prepare sites, workloads and the read-only identity
+        run: test/e2e/setup.sh
+      - name: Run e2e tests
+        run: make e2e
+      - name: Cluster state on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o wide --show-labels || true
+          kubectl get pods -A -o wide || true
+          kubectl -n e2e describe pods || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -50 || true
