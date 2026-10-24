@@ -2,3 +2,4 @@
 /dist/
 *.test
 *.out
+test/e2e/.out/

@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: e2e
+---
+# Healthy, protected by a PDB that allows no disruption: drains of its nodes must be blocked.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: web, namespace: e2e}
+spec:
+  replicas: 3
+  selector: {matchLabels: {app: web}}
+  template:
+    metadata: {labels: {app: web}}
+    spec:
+      nodeSelector: {e2e/pool: web}
+      containers:
+        - {name: app, image: registry.k8s.io/pause:3.9}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: web, namespace: e2e}
+spec:
+  minAvailable: 3
+  selector: {matchLabels: {app: web}}
+---
+# Uses emptyDir: a drain must refuse it unless delete_local_data is set.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: cache, namespace: e2e}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: cache}}
+  template:
+    metadata: {labels: {app: cache}}
+    spec:
+      nodeSelector: {e2e/cache: "true"}
+      containers:
+        - name: app
+          image: registry.k8s.io/pause:3.9
+          volumeMounts: [{name: scratch, mountPath: /scratch}]
+      volumes: [{name: scratch, emptyDir: {}}]
+---
+# Alone on its node, no PDB: the node that a drain can fully empty.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: solo, namespace: e2e}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: solo}}
+  template:
+    metadata: {labels: {app: solo}}
+    spec:
+      nodeSelector: {e2e/solo: "true"}
+      containers:
+        - {name: app, image: registry.k8s.io/pause:3.9}
+---
+# Crash-loops with a recognisable message in its previous log.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: crashy, namespace: e2e}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: crashy}}
+  template:
+    metadata: {labels: {app: crashy}}
+    spec:
+      nodeSelector: {e2e/solo: "true"}
+      containers:
+        - name: app
+          image: registry.k8s.io/e2e-test-images/busybox:1.29-4
+          command: ["sh", "-c", "echo 'model load failed: /models/defect.onnx missing'; exit 1"]
