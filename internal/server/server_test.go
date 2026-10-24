@@ -133,6 +133,29 @@ func TestActionsDefaultToDryRun(t *testing.T) {
 	}
 }
 
+func TestDrainNodeThroughMCP(t *testing.T) {
+	cfg := edge.DefaultConfig()
+	cfg.AllowWrites = true
+	cs := connect(t, cfg)
+	if !slices.Contains(toolNames(t, cs), "drain_node") {
+		t.Fatal("drain_node missing with --allow-writes")
+	}
+	var r edge.DrainResult
+	call(t, cs, "drain_node", map[string]any{"name": "pune-02", "reason": "maintenance"}, &r)
+	if !r.DryRun || len(r.Blocked) != 2 || len(r.Warnings) == 0 {
+		t.Errorf("drain without dry_run should be a dry run that reports the PDB block: %+v", r)
+	}
+	call(t, cs, "drain_node", map[string]any{"name": "blr-01", "reason": "maintenance", "dry_run": false}, &r)
+	if r.Complete || len(r.Blocked) != 1 || !strings.Contains(r.Message, "refused") {
+		t.Errorf("drain of a node with emptyDir pods should be refused: %+v", r)
+	}
+
+	ro := connect(t, edge.DefaultConfig())
+	if slices.Contains(toolNames(t, ro), "drain_node") {
+		t.Error("drain_node must not exist in read-only mode")
+	}
+}
+
 func TestPrompts(t *testing.T) {
 	cs := connect(t, edge.DefaultConfig())
 	ctx := context.Background()

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -18,6 +19,13 @@ func (g guard) dryRun() bool { return g.DryRun == nil || *g.DryRun }
 
 type cordonIn struct {
 	Name string `json:"name" jsonschema:"node name"`
+	guard
+}
+
+type drainIn struct {
+	Name            string `json:"name" jsonschema:"node name"`
+	DeleteLocalData bool   `json:"delete_local_data,omitempty" jsonschema:"allow evicting pods that use emptyDir storage, losing that data; default false"`
+	TimeoutSeconds  int    `json:"timeout_seconds,omitempty" jsonschema:"how long to keep retrying evictions blocked by a PodDisruptionBudget (default 120, max 600)"`
 	guard
 }
 
@@ -56,6 +64,18 @@ func addActionTools(s *mcp.Server, c *edge.Cluster) {
 		Annotations: action("Uncordon node", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in cordonIn) (*mcp.CallToolResult, *edge.ActionResult, error) {
 		r, err := c.SetCordon(ctx, in.Name, false, in.dryRun(), in.Reason)
+		return nil, r, err
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "drain_node",
+		Description: "Cordon a node and evict its pods through the Eviction API so PodDisruptionBudgets are honoured (like kubectl drain). " +
+			"DaemonSet and static pods are left in place. Refuses, changing nothing, if a pod uses emptyDir storage (unless delete_local_data=true) or has no controller. " +
+			"Warns if the node is the last Ready one at its site. Dry run by default: it lists exactly which pods would move and which a PodDisruptionBudget blocks. " +
+			"This is the riskiest action: show the dry-run result and get explicit approval first.",
+		Annotations: action("Drain node", true),
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in drainIn) (*mcp.CallToolResult, *edge.DrainResult, error) {
+		r, err := c.DrainNode(ctx, in.Name, in.DeleteLocalData, time.Duration(in.TimeoutSeconds)*time.Second, in.dryRun(), in.Reason)
 		return nil, r, err
 	})
 
