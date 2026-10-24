@@ -62,7 +62,7 @@ func call(t *testing.T, cs *mcp.ClientSession, name string, args map[string]any,
 
 func TestReadOnlyServerExposesOnlyReadTools(t *testing.T) {
 	cs := connect(t, edge.DefaultConfig())
-	want := []string{"cluster_overview", "describe_edge_node", "get_pod_logs", "list_edge_nodes", "list_events", "list_workloads"}
+	want := []string{"cluster_overview", "describe_edge_node", "get_pod_logs", "list_edge_nodes", "list_events", "list_workloads", "rollout_status"}
 	if got := toolNames(t, cs); !slices.Equal(got, want) {
 		t.Errorf("tools = %v, want %v", got, want)
 	}

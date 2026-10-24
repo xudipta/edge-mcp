@@ -54,6 +54,37 @@ func pod(ns, name, nodeName string, phase corev1.PodPhase, ready bool, waitingRe
 	}
 }
 
+// rolloutPod is a model-runtime DaemonSet pod; image is "v1" or "v2".
+func rolloutPod(nodeName, image string, phase corev1.PodPhase, ready bool) *corev1.Pod {
+	p := pod("edge-system", "model-runtime-"+nodeName, nodeName, phase, ready, "", 0)
+	p.Labels = map[string]string{"app": "model-runtime"}
+	p.Spec.Containers[0].Image = "registry.local/model-runtime:" + image
+	if phase == corev1.PodPending {
+		p.Status.ContainerStatuses[0].State.Waiting = &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}
+	}
+	cond := corev1.ConditionFalse
+	if ready {
+		cond = corev1.ConditionTrue
+	}
+	p.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: cond}}
+	return p
+}
+
+func modelRuntime(desired, ready int32) *appsv1.DaemonSet {
+	labels := map[string]string{"app": "model-runtime"}
+	return &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "edge-system", Name: "model-runtime"},
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "registry.local/model-runtime:v2"}}},
+			},
+		},
+		Status: appsv1.DaemonSetStatus{DesiredNumberScheduled: desired, NumberReady: ready, NumberAvailable: ready},
+	}
+}
+
 func deployment(ns, name string, desired, ready int32) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
@@ -69,6 +100,8 @@ func deployment(ns, name string, desired, ready int32) *appsv1.Deployment {
 //   - warehouse-del: 1 healthy CPU-only node
 //
 // The vision app is degraded (2/3 ready) because one pod is in CrashLoopBackOff.
+// The edge-system/model-runtime DaemonSet is mid-rollout from v1 to v2: three nodes
+// run v2, blr-02 (offline) is stuck on v1 and del-01's v2 pod is still Pending.
 func Fleet() *fake.Clientset {
 	gpu := corev1.ResourceList{"gpu.intel.com/i915": resource.MustParse("1")}
 	npu := corev1.ResourceList{"npu.intel.com/accel": resource.MustParse("1")}
@@ -78,6 +111,13 @@ func Fleet() *fake.Clientset {
 		node("blr-01", "store-blr", true, 8*time.Second, npu),
 		node("blr-02", "store-blr", false, 9*time.Minute, nil),
 		node("del-01", "warehouse-del", true, 12*time.Second, nil),
+
+		modelRuntime(5, 3),
+		rolloutPod("pune-01", "v2", corev1.PodRunning, true),
+		rolloutPod("pune-02", "v2", corev1.PodRunning, true),
+		rolloutPod("blr-01", "v2", corev1.PodRunning, true),
+		rolloutPod("blr-02", "v1", corev1.PodRunning, false),
+		rolloutPod("del-01", "v2", corev1.PodPending, false),
 
 		deployment("vision", "defect-detector", 3, 2),
 		deployment("retail", "shelf-scanner", 1, 1),

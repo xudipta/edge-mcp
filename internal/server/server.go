@@ -58,6 +58,12 @@ type workloadsOut struct {
 	Workloads []edge.Workload `json:"workloads"`
 }
 
+type rolloutIn struct {
+	Kind      string `json:"kind" jsonschema:"Deployment or DaemonSet"`
+	Namespace string `json:"namespace" jsonschema:"namespace of the workload"`
+	Name      string `json:"name" jsonschema:"workload name"`
+}
+
 type eventsIn struct {
 	Namespace string `json:"namespace,omitempty" jsonschema:"namespace to inspect; empty means every allowed namespace"`
 	All       bool   `json:"all,omitempty" jsonschema:"include Normal events too; by default only Warnings are returned"`
@@ -115,6 +121,15 @@ func addReadTools(s *mcp.Server, c *edge.Cluster) {
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in workloadsIn) (*mcp.CallToolResult, workloadsOut, error) {
 		w, err := c.ListWorkloads(ctx, in.Namespace, in.UnhealthyOnly)
 		return nil, workloadsOut{Workloads: w}, err
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "rollout_status",
+		Description: "Which sites run which version of a Deployment or DaemonSet: pods grouped by site and image, with sites that are stuck (old image only, Pending pods, NotReady nodes) highlighted. Use it to answer \"has the new version reached every site?\".",
+		Annotations: readOnly("Rollout status by site"),
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in rolloutIn) (*mcp.CallToolResult, *edge.RolloutReport, error) {
+		r, err := c.RolloutStatus(ctx, in.Kind, in.Namespace, in.Name)
+		return nil, r, err
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
