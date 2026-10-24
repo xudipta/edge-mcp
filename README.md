@@ -47,6 +47,21 @@ edge-mcp gives an assistant edge-shaped answers and keeps it on a short leash.
 
 Every tool returns structured JSON (with an output schema) plus text, so it works with any MCP client.
 
+### Prompts and resources
+
+In clients that support them, edge-mcp also offers one-click workflows and attachable context. Prompts never run action tools.
+
+| Prompt | Arguments | What it does |
+|---|---|---|
+| `triage_fleet` | none | Overview → unhealthy nodes → failing workloads → logs, summarised by site with next steps |
+| `site_report` | `site` | Status report for one site |
+| `incident_summary` | `namespace` | Recent warnings and crash reasons for a team's namespace |
+
+| Resource template | Returns |
+|---|---|
+| `edge://nodes/{name}` | JSON snapshot of a node with its pods and recent events |
+| `edge://sites/{site}` | JSON snapshot of every node at a site |
+
 ## Safety model
 
 - **Read-only by default.** Write tools are not even registered unless you start the server with `--allow-writes`.
