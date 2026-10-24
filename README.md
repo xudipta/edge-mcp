@@ -57,6 +57,19 @@ Every tool returns structured JSON (with an output schema) plus text, so it work
 - **Honest annotations.** Tools carry MCP `readOnlyHint` / `destructiveHint` annotations so clients can gate them.
 - **Least privilege.** Ready-made [read-only](deploy/rbac-readonly.yaml) and [operator](deploy/rbac-operator.yaml) RBAC roles.
 
+## Install
+
+Download a prebuilt binary (linux and macOS on amd64/arm64, Windows on amd64) from the [latest release](https://github.com/xudipta/edge-mcp/releases/latest). For example, on a linux/arm64 edge device:
+
+```sh
+VERSION=v0.1.0   # see the releases page
+curl -fsSL -o edge-mcp.tar.gz "https://github.com/xudipta/edge-mcp/releases/download/${VERSION}/edge-mcp_${VERSION}_linux_arm64.tar.gz"
+tar -xzf edge-mcp.tar.gz && sudo install "edge-mcp_${VERSION}_linux_arm64/edge-mcp" /usr/local/bin/
+edge-mcp --version
+```
+
+Each release includes `checksums.txt` (SHA-256). Or, with a Go toolchain: `go install github.com/xudipta/edge-mcp/cmd/edge-mcp@latest`.
+
 ## Quick start
 
 ### 1. Try it without a cluster
