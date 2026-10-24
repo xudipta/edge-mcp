@@ -1,4 +1,4 @@
-name: E2E (kind)
+name: E2E
 
 on:
   push:
@@ -10,9 +10,14 @@ permissions:
   contents: read
 
 jobs:
-  kind:
+  e2e:
+    name: e2e (${{ matrix.distro }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [kind, k3d]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -20,11 +25,23 @@ jobs:
           go-version-file: go.mod
       - name: Build
         run: make build
-      - name: Create kind cluster (1 control plane + 3 workers)
+
+      # kind: 1 control plane + 3 workers
+      - name: Create kind cluster
+        if: matrix.distro == 'kind'
         uses: helm/kind-action@v1.12.0
         with:
           cluster_name: edge
           config: test/e2e/kind.yaml
+
+      # k3s (via k3d): 1 server + 3 agents
+      - name: Create k3s cluster (k3d)
+        if: matrix.distro == 'k3d'
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/v5.8.3/install.sh | TAG=v5.8.3 bash
+          k3d cluster create --config test/e2e/k3d.yaml
+          kubectl wait --for=condition=Ready nodes --all --timeout=180s
+
       - name: Prepare sites, workloads and the read-only identity
         run: test/e2e/setup.sh
       - name: Run e2e tests

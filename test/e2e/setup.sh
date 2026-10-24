@@ -3,6 +3,7 @@
 # site labels, sample workloads, and a kubeconfig that only has the read-only RBAC role.
 #
 #   kind create cluster --name edge --config test/e2e/kind.yaml
+#   (or: k3d cluster create --config test/e2e/k3d.yaml)
 #   test/e2e/setup.sh
 #   make e2e
 set -euo pipefail

@@ -163,16 +163,18 @@ func TestEdgeMCPAgainstRealCluster(t *testing.T) {
 			t.Errorf("describe %s pods = %+v, want the solo pod", solo, d.Pods)
 		}
 
+		// crashy restarts in a loop, so it is Ready for a moment after each start: wait until it
+		// is reported unhealthy rather than sampling once.
 		var wl struct {
 			Workloads []struct {
 				Name    string `json:"name"`
 				Healthy bool   `json:"healthy"`
 			} `json:"workloads"`
 		}
-		call(t, cs, "list_workloads", map[string]any{"namespace": "e2e", "unhealthy_only": true}, &wl)
-		if len(wl.Workloads) != 1 || wl.Workloads[0].Name != "crashy" {
-			t.Errorf("unhealthy workloads = %+v, want only crashy", wl.Workloads)
-		}
+		eventually(t, 2*time.Minute, "crashy to be listed as the only unhealthy workload", func() bool {
+			call(t, cs, "list_workloads", map[string]any{"namespace": "e2e", "unhealthy_only": true}, &wl)
+			return len(wl.Workloads) == 1 && wl.Workloads[0].Name == "crashy"
+		})
 
 		var ro struct {
 			TargetImage string `json:"target_image"`

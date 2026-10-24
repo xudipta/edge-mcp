@@ -1,0 +1,18 @@
+# k3s in Docker: 1 server + 3 agents, matching test/e2e/kind.yaml.
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: edge
+servers: 1
+agents: 3
+options:
+  k3d:
+    wait: true
+    timeout: "180s"
+  k3s:
+    extraArgs:
+      # Not needed by the tests; keeps the cluster small and quick to start.
+      - arg: --disable=traefik
+        nodeFilters: ["server:*"]
+      - arg: --disable=servicelb
+        nodeFilters: ["server:*"]
