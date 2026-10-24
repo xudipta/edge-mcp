@@ -6,9 +6,14 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 // Now is the fixed "current time" the fleet is built around.
@@ -54,6 +59,28 @@ func pod(ns, name, nodeName string, phase corev1.PodPhase, ready bool, waitingRe
 	}
 }
 
+// ownedBy marks a pod as controlled by a workload of the given kind.
+func ownedBy(p *corev1.Pod, kind, name string) *corev1.Pod {
+	yes := true
+	p.OwnerReferences = []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: kind, Name: name, Controller: &yes}}
+	return p
+}
+
+// labeled sets one label on a pod.
+func labeled(p *corev1.Pod, k, v string) *corev1.Pod {
+	if p.Labels == nil {
+		p.Labels = map[string]string{}
+	}
+	p.Labels[k] = v
+	return p
+}
+
+// withEmptyDir gives a pod an emptyDir volume (local storage that a drain would lose).
+func withEmptyDir(p *corev1.Pod) *corev1.Pod {
+	p.Spec.Volumes = append(p.Spec.Volumes, corev1.Volume{Name: "cache", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}})
+	return p
+}
+
 // withAccel makes a pod request n of an accelerator resource.
 func withAccel(p *corev1.Pod, name corev1.ResourceName, n string) *corev1.Pod {
 	rl := corev1.ResourceList{name: resource.MustParse(n)}
@@ -65,6 +92,7 @@ func withAccel(p *corev1.Pod, name corev1.ResourceName, n string) *corev1.Pod {
 func rolloutPod(nodeName, image string, phase corev1.PodPhase, ready bool) *corev1.Pod {
 	p := pod("edge-system", "model-runtime-"+nodeName, nodeName, phase, ready, "", 0)
 	p.Labels = map[string]string{"app": "model-runtime"}
+	ownedBy(p, "DaemonSet", "model-runtime")
 	p.Spec.Containers[0].Image = "registry.local/model-runtime:" + image
 	if phase == corev1.PodPending {
 		p.Status.ContainerStatuses[0].State.Waiting = &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}
@@ -92,6 +120,10 @@ func modelRuntime(desired, ready int32) *appsv1.DaemonSet {
 	}
 }
 
+func detector(p *corev1.Pod) *corev1.Pod {
+	return ownedBy(labeled(p, "app", "defect-detector"), "ReplicaSet", "defect-detector-5c7b")
+}
+
 func deployment(ns, name string, desired, ready int32) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
@@ -112,7 +144,7 @@ func deployment(ns, name string, desired, ready int32) *appsv1.Deployment {
 func Fleet() *fake.Clientset {
 	gpu := corev1.ResourceList{"gpu.intel.com/i915": resource.MustParse("1")}
 	npu := corev1.ResourceList{"npu.intel.com/accel": resource.MustParse("1")}
-	return fake.NewClientset(
+	cs := fake.NewClientset(
 		node("pune-01", "factory-pune", true, 10*time.Second, gpu),
 		node("pune-02", "factory-pune", true, 15*time.Second, gpu),
 		node("blr-01", "store-blr", true, 8*time.Second, npu),
@@ -129,10 +161,17 @@ func Fleet() *fake.Clientset {
 		deployment("vision", "defect-detector", 3, 2),
 		deployment("retail", "shelf-scanner", 1, 1),
 
-		withAccel(pod("vision", "defect-detector-a", "pune-01", corev1.PodRunning, true, "", 0), "gpu.intel.com/i915", "1"),
-		pod("vision", "defect-detector-b", "pune-02", corev1.PodRunning, true, "", 0),
-		pod("vision", "defect-detector-c", "pune-02", corev1.PodRunning, false, "CrashLoopBackOff", 7),
-		pod("retail", "shelf-scanner-a", "blr-01", corev1.PodRunning, true, "", 0),
+		detector(withAccel(pod("vision", "defect-detector-a", "pune-01", corev1.PodRunning, true, "", 0), "gpu.intel.com/i915", "1")),
+		detector(pod("vision", "defect-detector-b", "pune-02", corev1.PodRunning, true, "", 0)),
+		detector(pod("vision", "defect-detector-c", "pune-02", corev1.PodRunning, false, "CrashLoopBackOff", 7)),
+		withEmptyDir(ownedBy(pod("retail", "shelf-scanner-a", "blr-01", corev1.PodRunning, true, "", 0), "ReplicaSet", "shelf-scanner-6d8f")),
+
+		// The detector is already degraded (2/3), so its budget allows no further disruption.
+		&policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "vision", Name: "defect-detector"},
+			Spec:       policyv1.PodDisruptionBudgetSpec{Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "defect-detector"}}},
+			Status:     policyv1.PodDisruptionBudgetStatus{DisruptionsAllowed: 0},
+		},
 
 		&corev1.Event{
 			ObjectMeta:     metav1.ObjectMeta{Namespace: "vision", Name: "ev1", CreationTimestamp: metav1.NewTime(Now.Add(-time.Minute))},
@@ -147,4 +186,51 @@ func Fleet() *fake.Clientset {
 			LastTimestamp: metav1.NewTime(Now.Add(-9 * time.Minute)),
 		},
 	)
+	cs.PrependReactor("create", "pods", evictionReactor(cs))
+	cs.PrependReactor("patch", "*", dryRunPatchReactor(cs))
+	return cs
+}
+
+// evictionReactor makes the fake Eviction API behave like the real one: a pod covered by a
+// PodDisruptionBudget with no disruptions left gets 429, a dry run changes nothing, and an
+// accepted eviction deletes the pod.
+func evictionReactor(cs *fake.Clientset) k8stesting.ReactionFunc {
+	return func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.GetSubresource() != "eviction" {
+			return false, nil, nil
+		}
+		ev := a.(k8stesting.CreateAction).GetObject().(*policyv1.Eviction)
+		pod, err := cs.Tracker().Get(corev1.SchemeGroupVersion.WithResource("pods"), a.GetNamespace(), ev.Name)
+		if err != nil {
+			return true, nil, err
+		}
+		// Use the tracker, not the clientset: the fake already holds its lock while reacting.
+		list, err := cs.Tracker().List(policyv1.SchemeGroupVersion.WithResource("poddisruptionbudgets"), policyv1.SchemeGroupVersion.WithKind("PodDisruptionBudget"), a.GetNamespace())
+		if err != nil {
+			return true, nil, err
+		}
+		for _, pdb := range list.(*policyv1.PodDisruptionBudgetList).Items {
+			sel, err := metav1.LabelSelectorAsSelector(pdb.Spec.Selector)
+			if err == nil && sel.Matches(labels.Set(pod.(*corev1.Pod).Labels)) && pdb.Status.DisruptionsAllowed <= 0 {
+				return true, nil, apierrors.NewTooManyRequests("Cannot evict pod as it would violate the pod's disruption budget.", 1)
+			}
+		}
+		if ev.DeleteOptions != nil && len(ev.DeleteOptions.DryRun) > 0 {
+			return true, nil, nil
+		}
+		return true, nil, cs.Tracker().Delete(corev1.SchemeGroupVersion.WithResource("pods"), a.GetNamespace(), ev.Name)
+	}
+}
+
+// dryRunPatchReactor makes the fake honour server-side dry run for patches: the object is
+// returned as it is and nothing is stored, like a real API server.
+func dryRunPatchReactor(cs *fake.Clientset) k8stesting.ReactionFunc {
+	return func(a k8stesting.Action) (bool, runtime.Object, error) {
+		p, ok := a.(k8stesting.PatchActionImpl)
+		if !ok || len(p.GetPatchOptions().DryRun) == 0 {
+			return false, nil, nil
+		}
+		obj, err := cs.Tracker().Get(a.GetResource(), a.GetNamespace(), p.GetName())
+		return true, obj, err
+	}
 }
