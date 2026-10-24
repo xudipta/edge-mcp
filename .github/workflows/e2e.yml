@@ -32,7 +32,6 @@ jobs:
       - name: Cluster state on failure
         if: failure()
         run: |
-          kubectl get nodes -o wide --show-labels || true
-          kubectl get pods -A -o wide || true
-          kubectl -n e2e describe pods || true
-          kubectl get events -A --sort-by=.lastTimestamp | tail -50 || true
+          kubectl get nodes --show-labels || true
+          kubectl get pods -A | grep -v Running || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -15 || true

@@ -68,5 +68,5 @@ spec:
       nodeSelector: {e2e/solo: "true"}
       containers:
         - name: app
-          image: public.ecr.aws/docker/library/busybox:1.36
+          image: registry.k8s.io/e2e-test-images/busybox:1.29-4
           command: ["sh", "-c", "echo 'model load failed: /models/defect.onnx missing'; exit 1"]
