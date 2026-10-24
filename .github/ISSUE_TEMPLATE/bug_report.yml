@@ -1,0 +1,37 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: edge-mcp version
+      description: Output of `edge-mcp --version`
+    validations:
+      required: true
+  - type: input
+    id: cluster
+    attributes:
+      label: Cluster type and version
+      placeholder: k3s v1.34, kind, EKS, ...
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      placeholder: Claude Desktop, Claude Code, Cursor, ...
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options: [stdio, Streamable HTTP, demo mode]
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Flags used and tool calls made. Remove any secrets.

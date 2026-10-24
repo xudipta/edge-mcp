@@ -6,7 +6,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,13 +35,15 @@ func main() {
 func run() error {
 	cfg := edge.DefaultConfig()
 	var (
-		kubeconfig  = flag.String("kubeconfig", "", "path to a kubeconfig (default: $KUBECONFIG, ~/.kube/config, or in-cluster)")
-		kubeContext = flag.String("context", "", "kubeconfig context to use")
-		httpAddr    = flag.String("http", "", "serve Streamable HTTP on this address (e.g. 127.0.0.1:8080) instead of stdio")
-		namespaces  = flag.String("namespaces", "", "comma-separated namespace allowlist (default: all namespaces)")
-		maxReplicas = flag.Int("max-replicas", int(cfg.MaxReplicas), "upper bound for scale_deployment")
-		version     = flag.Bool("version", false, "print the version and exit")
-		demo        = flag.Bool("demo", false, "serve a built-in sample edge fleet instead of a real cluster (no kubeconfig needed)")
+		kubeconfig   = flag.String("kubeconfig", "", "path to a kubeconfig (default: $KUBECONFIG, ~/.kube/config, or in-cluster)")
+		kubeContext  = flag.String("context", "", "kubeconfig context to use")
+		httpAddr     = flag.String("http", "", "serve Streamable HTTP on this address (e.g. 127.0.0.1:8080) instead of stdio")
+		httpToken    = flag.String("http-token", os.Getenv("EDGE_MCP_TOKEN"), "require this bearer token on every HTTP request (default: $EDGE_MCP_TOKEN)")
+		httpInsecure = flag.Bool("http-insecure", false, "allow --http on a non-loopback address without a token")
+		namespaces   = flag.String("namespaces", "", "comma-separated namespace allowlist (default: all namespaces)")
+		maxReplicas  = flag.Int("max-replicas", int(cfg.MaxReplicas), "upper bound for scale_deployment")
+		version      = flag.Bool("version", false, "print the version and exit")
+		demo         = flag.Bool("demo", false, "serve a built-in sample edge fleet instead of a real cluster (no kubeconfig needed)")
 	)
 	flag.StringVar(&cfg.SiteLabel, "site-label", cfg.SiteLabel, "node label that names a node's site")
 	flag.BoolVar(&cfg.AllowWrites, "allow-writes", false, "enable cordon/uncordon/restart/scale tools (each still dry-runs by default)")
@@ -53,7 +57,10 @@ func run() error {
 	// stdout carries the MCP protocol in stdio mode, so all logging goes to stderr.
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
-	cfg.MaxReplicas = int32(*maxReplicas)
+	if *maxReplicas < 1 || *maxReplicas > math.MaxInt32 {
+		return fmt.Errorf("--max-replicas must be between 1 and %d", math.MaxInt32)
+	}
+	cfg.MaxReplicas = int32(*maxReplicas) // #nosec G115 -- range checked above
 	for _, ns := range strings.Split(*namespaces, ",") {
 		if ns = strings.TrimSpace(ns); ns != "" {
 			cfg.Namespaces = append(cfg.Namespaces, ns)
@@ -62,7 +69,7 @@ func run() error {
 
 	var cluster *edge.Cluster
 	if *demo {
-		cluster = edge.New(edgetest.Fleet(), cfg).WithClock(func() time.Time { return edgetest.Now })
+		cluster = edge.New(edgetest.Fleet(), cfg).WithClock(func() time.Time { return edgetest.Now }).WithLogSource(edgetest.Logs)
 	} else {
 		client, err := kubeClient(*kubeconfig, *kubeContext)
 		if err != nil {
@@ -78,9 +85,19 @@ func run() error {
 	defer stop()
 
 	if *httpAddr == "" {
-		return srv.Run(ctx, &mcp.StdioTransport{})
+		// Piped input closes stdin right after the last request; hold EOF back until it is answered.
+		in, out := drainingStdio(os.Stdin, nopCloser{os.Stdout}, 30*time.Second)
+		return srv.Run(ctx, &mcp.IOTransport{Reader: in, Writer: out})
 	}
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, nil)
+	if err := checkHTTPExposure(*httpAddr, *httpToken, *httpInsecure); err != nil {
+		return err
+	}
+	var handler http.Handler = mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, nil)
+	if *httpToken != "" {
+		handler = bearerAuth(*httpToken, handler)
+	} else {
+		slog.Warn("HTTP mode is running without authentication", "addr", *httpAddr)
+	}
 	hs := &http.Server{Addr: *httpAddr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -113,3 +130,8 @@ func kubeClient(path, kubeContext string) (kubernetes.Interface, error) {
 	}
 	return client, nil
 }
+
+// nopCloser keeps the transport from closing os.Stdout.
+type nopCloser struct{ io.Writer }
+
+func (nopCloser) Close() error { return nil }
