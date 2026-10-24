@@ -13,9 +13,10 @@ mkdir -p "$out"
 mapfile -t workers < <(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o name | sed 's|node/||' | sort)
 [ "${#workers[@]}" -ge 3 ] || { echo "need at least 3 worker nodes, found ${#workers[@]}" >&2; exit 1; }
 
-# Two nodes at one site, one alone at another.
+# Two nodes at one site, one alone at another. Each test workload is pinned to its own
+# node, so every drain scenario (PDB block, emptyDir refusal, clean drain) is deterministic.
 kubectl label node "${workers[0]}" topology.kubernetes.io/zone=store-a e2e/pool=web --overwrite
-kubectl label node "${workers[1]}" topology.kubernetes.io/zone=store-a e2e/pool=web e2e/cache=true --overwrite
+kubectl label node "${workers[1]}" topology.kubernetes.io/zone=store-a e2e/cache=true --overwrite
 kubectl label node "${workers[2]}" topology.kubernetes.io/zone=store-b e2e/solo=true --overwrite
 
 kubectl apply -f test/e2e/manifests.yaml
