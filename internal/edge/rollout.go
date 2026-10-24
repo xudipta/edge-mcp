@@ -166,7 +166,7 @@ func (c *Cluster) RolloutStatus(ctx context.Context, kind, namespace, name strin
 			rep.PendingPods++
 			a.reasons = append(a.reasons, fmt.Sprintf("pod %s is Pending", p.Name))
 		}
-		if onNode && !node.Ready && !(isCurrent && ready) {
+		if onNode && !node.Ready && (!isCurrent || !ready) {
 			a.reasons = append(a.reasons, fmt.Sprintf("node %s is NotReady", node.Name))
 		}
 	}

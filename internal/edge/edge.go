@@ -40,7 +40,12 @@ type Cluster struct {
 	client kubernetes.Interface
 	cfg    Config
 	now    func() time.Time
+	logs   LogSource
 }
+
+// LogSource replaces the Kubernetes log endpoint, for demos whose fake clientset
+// can only return a placeholder. It returns the full log; PodLogs applies tail_lines.
+type LogSource func(namespace, pod, container string, previous bool) (string, error)
 
 // New returns a Cluster backed by client.
 func New(client kubernetes.Interface, cfg Config) *Cluster {
@@ -50,6 +55,12 @@ func New(client kubernetes.Interface, cfg Config) *Cluster {
 // WithClock replaces the clock used for ages and heartbeat staleness (for tests and demos).
 func (c *Cluster) WithClock(now func() time.Time) *Cluster {
 	c.now = now
+	return c
+}
+
+// WithLogSource makes PodLogs read from src instead of the Kubernetes API (for demos).
+func (c *Cluster) WithLogSource(src LogSource) *Cluster {
+	c.logs = src
 	return c
 }
 
