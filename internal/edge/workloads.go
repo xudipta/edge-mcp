@@ -169,7 +169,7 @@ func (c *Cluster) PodLogs(ctx context.Context, namespace, pod, container string,
 	if err != nil {
 		return "", fmt.Errorf("reading logs of %s/%s: %w", namespace, pod, err)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	var buf bytes.Buffer
 	// Hard cap on bytes too, so one chatty line can't flood the model's context.
 	if _, err := io.Copy(&buf, io.LimitReader(rc, 256*1024)); err != nil {
